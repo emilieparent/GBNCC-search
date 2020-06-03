@@ -23,7 +23,7 @@ class GaussianProfileClass(profile.ProfileClass):
  
         trial_params = [0.0]
  
-        amplitude = max(data[(0.1*nbins):(0.4*nbins)])
+        amplitude = max(data[int(0.1*nbins):int(0.4*nbins)])
         fwhm = 0.02 # full window should be 50 times estimated pulse width
         phase = 0.25 # this is where the single pulse should be placed
         trial_params.append(amplitude)

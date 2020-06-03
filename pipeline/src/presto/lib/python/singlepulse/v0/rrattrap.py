@@ -1,11 +1,11 @@
 #!/usr/bin/env python
 
 """
-rratrap.py 
+rrattrap.py 
 
 Single pulse sifting code: performs grouping and ranking of single pulses identified by PRESTO's single_pulse_search.py.
 Usage:
-    python rratrap.py [OPTIONS] --inffile <.inf file> <.singlepulse files>
+    python rrattrap.py [OPTIONS] --inffile <.inf file> <.singlepulse files>
 
 Output:
     - groups.txt : a file listing all single pulse groups and their ranking.
@@ -26,15 +26,12 @@ from Pgplot import *
 import optparse
 import sys
 import singlepulse.spio as spio
-####Modification by Pragya (November 15,2016)
 import singlepulse.rrattrap_config as rrattrap_config
-############################################
 
 FRACTIONAL_SIGMA = 0.9 # change to 0.8?
 ALL_RANKS_ORDERED = [1,2,0,3,4,5,6,7]
 DEBUG = True # if True, will be verbose
 
-####Modification by Pragya (November 15,2016)
 def dmt_threshold(dm, use_dmplan):
     """
        Returns factor to multiply DM_thresh and time thresh by.
@@ -58,16 +55,14 @@ def group_size(inffile, dt, chan_width, BW_MHz, S_N_peak, W_B_s, DM, vary_group_
     else:
         min_group = min_group
     return min_group
-##############################################
 
 class SinglePulseGroup(object): # Greg's modification
     """Define single pulse group
     """
-    ###############
     __slots__ = ['min_dm', 'max_dm', 'max_sigma', 'center_time', 
                  'min_time', 'max_time', 'duration', 
                  'singlepulses', 'numpulses', 'rank', 'min_time_C', 'max_time_C'] # Greg's modification
-    ###Modification by Pragya (November 14,2016): Added min_time_C and max_time_C to get pulse width at optimal DM to determine cluster size 
+    ###Added min_time_C and max_time_C to get pulse width at optimal DM to determine cluster size 
     def __init__(self, dm, sigma, time, sample, downfact):
         """SinglePulseGroup constructor.
             Takes as input one single pulse (creates a group of one)
@@ -85,7 +80,7 @@ class SinglePulseGroup(object): # Greg's modification
             dt = time/sample
         self.min_time = time-downfact/2.0*dt
         self.max_time = time+downfact/2.0*dt
-        ###Modification by Pragya (November 14,2016): Added min_time_C and max_time_C to get pulse width at optimal DM to determine cluster size
+        ###Added min_time_C and max_time_C to get pulse width at optimal DM to determine cluster size
         self.min_time_C = time-downfact/2.0*dt
         self.max_time_C = time+downfact/2.0*dt
         #############################################
@@ -135,14 +130,13 @@ class SinglePulseGroup(object): # Greg's modification
         self.max_dm = max(self.max_dm, other.max_dm)
         self.min_time = min(self.min_time, other.min_time)
         self.max_time = max(self.max_time, other.max_time)
-        #####Modification by Pragya: Get duration of pulse at optimal DM to implement variable cluster size (November 15,2016) 
+        #####Get duration of pulse at optimal DM to implement variable cluster size (November 15,2016) 
         if self.max_sigma > other.max_sigma:
             self.min_time_C = self.min_time_C
             self.max_time_C = self.max_time_C
         else:
             self.min_time_C = other.min_time_C
             self.max_time_C = other.max_time_C
-        #####################################
         self.max_sigma = max(self.max_sigma, other.max_sigma)
         self.duration = self.max_time - self.min_time
         self.center_time = (self.min_time + self.max_time)/2.0
@@ -160,7 +154,7 @@ class SinglePulseGroup(object): # Greg's modification
         return '\n'.join(s)
 
 def create_groups(sps, inffile, min_nearby=1, time_thresh=0.5, \
-                    dm_thresh=0.1, ignore_obs_end=0, use_dmplan=False):
+                    dm_thresh=0.1, ignore_obs_end=0, use_dmplan=False, sp_width = 3, sp_DM = 500):
     """Given a recarray of singlepulses return a list of
         SinglePulseGroup objects.
 
@@ -220,8 +214,8 @@ def create_groups(sps, inffile, min_nearby=1, time_thresh=0.5, \
             grp = SinglePulseGroup(*sps[ii])
             groups.append(grp)
         else:
-            #Modification to allow forming a group from a single pulse (Pragya Chawla, Feb 2017)
-            if sps[ii]['sigma'] > 10 and sps[ii]['downfact'] < 2 and sps[ii]['dm'] > 778.36: #FIXME: Specific for GBNCC
+            #Modification to allow forming a group from a single pulse
+            if sps[ii]['sigma'] > 10 and sps[ii]['downfact'] < sp_width and sps[ii]['dm'] > sp_DM: 
                 grp = SinglePulseGroup(*sps[ii])
                 grp.rank = 7
                 groups.append(grp)
@@ -264,7 +258,7 @@ def grouping_rfi(groups, use_dmplan=False, time_thresh=0.5, dm_thresh=0.1):
                 grp2 = groups[j]
                 if (grp1.rank != 2) and (grp2.rank != 2):
                     continue
-                #######Modification by Pragya (November 16,2016) : Proximity in DM to RFI should not depend on downsampling factor 
+                ###Proximity in DM to RFI should not depend on downsampling factor 
                 if grp1.dmisclose(grp2,use_dmplan=False,dm_thresh=10) and grp1.timeisclose(grp2, use_dmplan, time_thresh)\
                                   and grp1.rank != 7 and grp2.rank != 7: # use bigger time thresh?
                     grp1.combine(groups.pop(j))
@@ -292,7 +286,7 @@ def grouping_sp_t(groups, use_dmplan=False, time_thresh=0.5, dm_thresh=0.1):
             for j in range(len(groups)-1,i,-1):
                 if grp1.timeisclose(groups[j], use_dmplan, time_thresh) and \
                     grp1.dmisclose(groups[j],use_dmplan=False,dm_thresh=DMDIFF)\
-                    and grp1.rank != 7 and groups[j].rank != 7 : ###Modification by Pragya to ensure high S/N, high DM groups 
+                    and grp1.rank != 7 and groups[j].rank != 7 : ###Modification to ensure high S/N, high DM groups 
                                                       #are not processed by RRATTRAP
                                                       # We check if two events have similar time and 
                                                       # a DM difference < DMDIFF
@@ -302,7 +296,7 @@ def grouping_sp_t(groups, use_dmplan=False, time_thresh=0.5, dm_thresh=0.1):
                     didcombine = True
     return groups
 
-###########Modification by Pragya (November 15,2016): Base minimum group size on peak S/N, W_b and DM
+###########Modification : Base minimum group size on peak S/N, W_b and DM
 def flag_noise(groups, inffile, dt, chan_width, BW_MHz, use_dmplan=False, vary_group_size=False, min_group=45):
     """Flag groups as noise based on group size.
         If the number of sp events in a group is < min_group,
@@ -328,18 +322,11 @@ def flag_noise(groups, inffile, dt, chan_width, BW_MHz, use_dmplan=False, vary_g
         min_group = group_size(inffile, dt, chan_width, BW_MHz, grp.max_sigma, duration_C, opt_DM, vary_group_size, min_group)
         if grp.numpulses < min_group and grp.rank != 7:
             grp.rank = 1
-        ####FIXME: Specific to GBNCC
         if max(min_group,grp.numpulses) < 20 and grp.max_sigma > 10: 
-            if opt_DM > 1882.36 and duration_C < 13e-3:
-               grp.rank = 7
-            elif 778.36 < opt_DM < 1882.36 and duration_C < 9e-3:
-               grp.rank = 7
-            elif 390.76 < opt_DM < 778.36 and duration_C < 3e-3:
-               grp.rank = 7
-            elif 217.36 < opt_DM < 390.76 and duration_C < 1.5e-3:
-               grp.rank = 7
+            flag = rrattrap_config.assign_rank_7(opt_DM, duration_C)
+            if flag:
+                grp.rank = 7
     return groups
-###################
 
 
 
@@ -389,19 +376,19 @@ def rank_groups(groups, inffile, dt, chan_width, BW_MHz, use_dmplan=False, vary_
         if (len(grp.singlepulses) < min_group) and grp.rank != 7: 
             grp.rank = 1
         elif grp.rank != 2 and grp.rank != 7 : # don't overwrite ranks of rfi groups
-            ###Modification by Pragya; don't overwrite ranks of high DM, high S/N groups
+            ### don't overwrite ranks of high DM, high S/N groups
             numsps = len(grp.singlepulses)
             # sort list by increasing DM
             idmsort = np.argsort([sp[0] for sp in grp.singlepulses])
             
-            sigmas = np.ma.zeros(int(np.ceil(numsps/5.0)*5))
+            sigmas = np.ma.zeros(int(np.ceil(numsps/5.0)*5))		## Emilie: argument must be integer
             sigmas[-numsps:] = np.asarray([sp[1] for sp in grp.singlepulses])[idmsort]
             # Mask sigma=0. These are elements added to pad size of array
             # to have multiple of 5 elements
             # (there should never be actual SPs with sigma=0)
             sigmas = np.ma.masked_equal(sigmas, 0.0)
          
-            sigmas.shape = (5, int(np.ceil(numsps/5.0)))
+            sigmas.shape = (5, int(np.ceil(numsps/5.0)))		## Emilie: argument must be integer
            
             maxsigmas = sigmas.max(axis=1)
             avgsigmas = sigmas.mean(axis=1)
@@ -685,17 +672,18 @@ def rank_occur(groups):
 
 #@profile
 def main():
-    parser = optparse.OptionParser(prog="rratrap.py", \
+    parser = optparse.OptionParser(prog="rrattrap.py", \
                          version="Chen Karako, updated by Chitrang Patel(June 23, 2015)",\
                          usage="%prog --inffile <.inf file> [options] *.singlepulse",\
                          description="Group single pulse events and rank them based on the sigma behavior. \
                                        Plot DM vs time with different colours for different ranks as follows:\
-                                       \t\tRank 1 (Other)      : Grey\
-                                       \t\tRank 2 (RFI)        : Red\
-                                       \t\tRank 3 (ok)         : Cyan\
-                                       \t\tRank 4 (good)       : dim blue\
-                                       \t\tRank 5 (very good)  : dark blue\
-                                       \t\tRank 6 (excellent)  : Magenta")
+                                       \t\tRank 1 (Other)          : Grey\
+                                       \t\tRank 2 (RFI)            : Red\
+                                       \t\tRank 3 (ok)             : Cyan\
+                                       \t\tRank 4 (good)           : dim blue\
+                                       \t\tRank 5 (very good)      : dark blue\
+                                       \t\tRank 6 (excellent)      : Magenta\
+                                       \t\tRank 7 (narrow pulses)  : Green")
 
     parser.add_option('--CLOSE-DM', dest='close_dm', type='float', \
                         help="DM to below which the signalis considered RFI(Default: 2", \
@@ -754,7 +742,7 @@ def main():
                          " Only '.inf' types are supported.")
     
     if options.use_DMplan or options.use_configfile or options.vary_group_size:
-        import rrattrap_config
+        import singlepulse.rrattrap_config as rrattrap_config
 
     RANKS = np.asarray([2,0,3,4,5,6,7])
     
@@ -768,6 +756,10 @@ def main():
         PLOTTYPE = rrattrap_config.PLOTTYPE
         RANKS_TO_WRITE = rrattrap_config.RANKS_TO_WRITE
         RANKS_TO_PLOT = rrattrap_config.RANKS_TO_PLOT
+        IGNORE_OBS_END = rrattrap_config.IGNORE_OBS_END
+        MAX_DM =  rrattrap_config.MAX_DM
+        SP_WIDTH = rrattrap_config.sp_width
+        SP_DM = rrattrap_config.sp_DM
     else:
         CLOSE_DM = options.close_dm
         MIN_GROUP = options.min_group
@@ -776,8 +768,12 @@ def main():
         MIN_SIGMA = options.min_sigma
         PLOT = options.plot
         PLOTTYPE = options.plottype
+        IGNORE_OBS_END = 0
+        MAX_DM = 10000
         RANKS_TO_WRITE = list(RANKS[RANKS>options.min_ranktowrite]) 
         RANKS_TO_PLOT = list(RANKS[RANKS>options.min_ranktoplot])
+        SP_WIDTH = 3
+        SP_DM = 500
     
     inffile = options.inffile
     inf = infodata.infodata(inffile)    
@@ -788,7 +784,8 @@ def main():
                 strftime("%Y-%m-%d %H:%M:%S"))
     print_debug("Number of single pulse events: %d " % len(groups))
     
-    groups = create_groups(groups, inffile, min_nearby=1, ignore_obs_end=0, time_thresh=TIME_THRESH, dm_thresh=DM_THRESH, use_dmplan=options.use_DMplan) # ignore the last 10 seconds of the obs, for palfa
+    groups = create_groups(groups, inffile, min_nearby=1, ignore_obs_end=IGNORE_OBS_END, time_thresh=TIME_THRESH, \
+                           dm_thresh=DM_THRESH, use_dmplan=options.use_DMplan, sp_width = SP_WIDTH, sp_DM = SP_DM) 
     print_debug("Number of groups: %d " % len(groups))
     print_debug("Finished create_groups, beginning grouping_sp_dmt... " +
                     strftime("%Y-%m-%d %H:%M:%S"))
@@ -877,9 +874,9 @@ def main():
             print_debug("Finished PGplotting DMs20-110 "+strftime("%Y-%m-%d %H:%M:%S"))
             plot_sp_rated_pgplot(groups, ranks, inffile, 100, 310)
             print_debug("Finished PGplotting DMs100-310 "+strftime("%Y-%m-%d %H:%M:%S"))
-            plot_sp_rated_pgplot(groups, ranks, inffile, 300, 1100)
-            print_debug("Finished PGplotting DMs300-1100 "+strftime("%Y-%m-%d %H:%M:%S"))
-            plot_sp_rated_pgplot(groups, ranks, inffile, 1000, 3100)
+            plot_sp_rated_pgplot(groups, ranks, inffile, 300, 1000)
+            print_debug("Finished PGplotting DMs300-1000 "+strftime("%Y-%m-%d %H:%M:%S"))
+            plot_sp_rated_pgplot(groups, ranks, inffile, 1000, MAX_DM)
             print_debug("Finished PGplotting DMs1000-3100 "+strftime("%Y-%m-%d %H:%M:%S"))
         elif PLOTTYPE.lower() == 'matplotlib':
             # Use matplotlib to plot
@@ -889,9 +886,9 @@ def main():
             print_debug("Finished plotting DMs20-110 "+strftime("%Y-%m-%d %H:%M:%S"))
             plot_sp_rated_all(groups, ranks, inffile, 100, 310)
             print_debug("Finished plotting DMs100-310 "+strftime("%Y-%m-%d %H:%M:%S"))
-            plot_sp_rated_all(groups, ranks, inffile, 300, 1100)
-            print_debug("Finished plotting DMs300-1100 "+strftime("%Y-%m-%d %H:%M:%S"))
-            plot_sp_rated_all(groups, ranks, inffile, 1000, 3100)
+            plot_sp_rated_all(groups, ranks, inffile, 300, 1000)
+            print_debug("Finished plotting DMs300-1000 "+strftime("%Y-%m-%d %H:%M:%S"))
+            plot_sp_rated_all(groups, ranks, inffile, 1000, MAX_DM)
             print_debug("Finished plotting DMs1000-3100 "+strftime("%Y-%m-%d %H:%M:%S"))
         else:
             print "Plot type must be one of 'matplotlib' or 'pgplot'. Not plotting."

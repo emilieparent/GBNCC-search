@@ -38,7 +38,7 @@ INTEGRATED_SNR_THRESHOLD = 5.0
 # The FWHM of the telescope beam (radians)
 BEAM_FWHM                = 36.0/60.0*N.pi/180.0
 # The UBC AI classsifier data
-ubc_AI_classifier_name = "/gs/project/bgf-180-ad/PALFA4/software/ubc_AI/trained_AI/clfl2_BD.pkl"
+ubc_AI_classifier_name = "/home/aemcewen/projects/rrg-vkaspi-ad/GBNCC_test/pipeline/lib/python/ubc_AI/trained_AI/clfl2_BD.pkl" #"/home/aemcewen/projects/rrg-vkaspi-ad/PALFA4/software/ubc_AI/trained_AI/clfl2_BD.pkl"
 ubc_AI_classifier = cPickle.load(open(ubc_AI_classifier_name, "rb"))
 
 # Utility function definitions

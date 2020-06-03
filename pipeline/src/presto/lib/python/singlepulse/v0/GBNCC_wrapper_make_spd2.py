@@ -117,6 +117,7 @@ def GBNCC_wrapper(txtfile, maskfile, fitsfilenm, path_sp_files):
     subfile = psrfits.PsrfitsFile(subfilenm)
     
     for ii in range(len(values)):
+	print int(lis[ii])
         dm_list, time_list, dm_arr, sigma_arr, width_arr = spio.read_RRATrap_info(txtfile, int(lis[ii]), int(ranks[ii]))
         wrapper_cand = spcand.params() 
         wrapper_cand.read_from_file(values[ii], subfile.tsamp, subfile.specinfo.N, \

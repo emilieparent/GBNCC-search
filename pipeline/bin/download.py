@@ -6,20 +6,17 @@ import database, config, utils
 def download(outdir):
      db = database.Database("observations")
      #query  = "SELECT ID,FilePath,FileName FROM GBNCC WHERE "\
-     #         "ProcessingStatus='u' OR (ProcessingStatus='f' AND "\
-     #         "ProcessingAttempts < 10) AND FileName NOT LIKE '%2bit%'"
+     #         "(ProcessingStatus='f' AND "\
+     #         "ProcessingAttempts < 100)"
      query  = "SELECT ID,FilePath,FileName FROM GBNCC WHERE "\
               "ProcessingStatus='u' AND FileName NOT LIKE '%2bit%' "\
-              "AND DATE(UploadDate) > '2016-01-01'"
+              "AND DateObserved >= 58270.0 ORDER BY DateObserved"
      db.execute(query)
      ret     = db.cursor.fetchone()
      if ret is not None:
           ID      = ret[0]
           filenm  = os.path.join(*ret[1:])
-          if config.machine == "nimrod":
-               cmd = "cp %s %s"%(filenm,outdir)
-          else:
-               cmd = "rsync astro.cv.nrao.edu:%s %s"%(filenm,outdir)
+          cmd     = "rsync amcewen@astro.cv.nrao.edu:%s %s"%(filenm,outdir)
           
           query   = "UPDATE GBNCC SET ProcessingStatus='d',"\
                     "ProcessingSite='%s' WHERE ID=%i"%(config.machine,ID)

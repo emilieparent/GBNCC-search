@@ -1,0 +1,30 @@
+# Load system software modules
+module load gcc/7.3.0 openmpi/3.1.2 python/2.7.14 scipy-stack/2019a
+module load fftw/3.3.8  pgplot/5.2 cfitsio/3.42 unixodbc/2.3.7
+
+# set localization since some programs like to complain about it
+export LANGUAGE=en_US.UTF-8
+export LANG=en_US.UTF-8
+export LC_ALL=en_US.UTF-8
+export PKG_CONFIG_PATH=/cvmfs/soft.computecanada.ca/easybuild/software/2017/avx512/Compiler/gcc7.3/cfitsio/3.42/lib/pkgconfig
+
+# set env variables for path to our software
+export SOFTWARE=/lustre03/project/6007521/software/ 
+source $SOFTWARE/pulsarenv/bin/activate
+
+export TEMPO=$SOFTWARE/src/tempo
+export MKL_THREADING_LAYER=GNU
+export PGPLOT_DIR=$EBROOTPGPLOT
+export PGPLOT_DEV="/XW"
+
+export PRESTO=$SOFTWARE/src/presto
+export PROJECT=~/projects/rrg-vkaspi-ad/GBNCC
+export MYPRESTO=$PROJECT/pipeline/src/presto
+export PALFA=~/projects/rrg-vkaspi-ad/PALFA4
+
+export LD_LIBRARY_PATH=$PALFA/software/lib:$LD_LIBRARY_PATH:$PRESTO/lib:$EBROOTPGPLOT/lib:$PROJECT/pipeline/lib:/lustre03/project/6007521/software/lib 
+
+export PATH=$PROJECT/pipeline/bin:$PROJECT/pipeline/src/ffaGo:$PROJECT/pipeline/lib/python/sp_raters:$PROJECT/pipeline/lib/python/singlepulse:$PALFA/software/bin:$PATH:$SOFTWARE/bin:$PRESTO/bin:
+
+export PYTHONPATH=$PALFA/software/lib/python2.7/site-packages:$PROJECT/pipeline/lib/python/:$PROJECT/pipeline/lib/python/sp_raters:$PROJECT/pipeline/lib/python/singlepulse:$PROJECT/pipeline/lib/python/sp_rating_classes:$PROJECT/pipeline/lib/python/ubc_AI:$PYTHONPATH:$SOFTWARE/lib/python2.7/site-packages:$PRESTO/lib/python:$PROJECT/pipeline/lib/python/:$SOFTWARE/prestoenv/lib/python2.7:$SOFTWARE/prestoenv/lib/python2.7/site-packages:$SOFTWARE/src/pyslurm:$PROJECT/pipeline/src/ffaGo
+

@@ -46,7 +46,7 @@ def get_ffa_folding_command(cand, obs, ddplans, maskfilenm):
         npart = 10
         otheropts = "-nosearch -slow"
 
-    return "prepfold -noxwin -mask %s -dm %.2f -p %f -o %s " \
+    return "prepfold -noxwin -ignorechan 2456:3277 -mask %s -dm %.2f -p %f -o %s " \
                 "-nsub %d -npart %d %s -n %d %s" % \
            (maskfilenm,cand.DM, cand.p, outfilenm,
             nsub, npart, otheropts, N, fitsfile)

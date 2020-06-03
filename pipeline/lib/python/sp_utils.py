@@ -9,7 +9,7 @@ import glob
 import pickle
 import os.path
 import matplotlib
-matplotlib.use('Agg')
+if matplotlib.backends.backend!='Agg' and matplotlib.backends.backend!='agg':matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import infodata
 import group_sp

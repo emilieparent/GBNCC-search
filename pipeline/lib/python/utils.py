@@ -1,10 +1,11 @@
-import os, glob, config, psr_utils
+import os, glob, config, psr_utils#, PBSQuery
 from subprocess import Popen, PIPE
 import numpy as np
 import matplotlib.pyplot as plt
 
 def getqueue(machine,queue):
-    if machine == "guillimin" or machine == "nimrod":
+    #queue = PBSQuery.PBSQuery()
+    if machine == "guillimin":
         alljobs = queue.getjobs()
         if alljobs is not None:
             myjobs    = [job for job in alljobs.itervalues() \
@@ -13,15 +14,22 @@ def getqueue(machine,queue):
         else: myjobs = []
         nqueued = len([job for job in myjobs if job["job_state"][0] == "Q" \
                        or job["job_state"] == "B"])
-    
+    elif machine == 'beluga':
+        alljobs=queue.get()
+        nqueued=0
+        for jobid in alljobs:
+            if alljobs[jobid]['user_id']==config.user_id and (alljobs[jobid]['job_state'] == 'PENDING' or alljobs[jobid]['job_state'] == 'RUNNING'):
+                nqueued+=1
     return nqueued
 
 def subjob(machine, subfilenm, options=""):
-    if machine == "guillimin" or machine == "nimrod":
-        cmd = "qsub " + options + " " + subfilenm
-        process = Popen(cmd, shell=True, stdout=PIPE, stderr=PIPE)
-        jobid,err = process.communicate()
-            
+    if machine == "guillimin":
+        cmd = "qsub "
+    elif machine == 'beluga':
+        cmd = "sbatch " 
+    cmd = cmd + options + ' ' + subfilenm
+    process = Popen(cmd, shell=True, stdout=PIPE, stderr=PIPE)
+    jobid,err = process.communicate()
     if len(err) != 0: return None, err.strip()
     else: return jobid, None
 
@@ -38,13 +46,16 @@ def results_status(outdir, basenm):
     ngroup      = len(glob.glob(os.path.join(outdir, "groups.txt")))
     #ngroup = 1
     ngroupplots = len(glob.glob(os.path.join(outdir, "grouped*png")))
+    nffasummary = len(glob.glob(os.path.join(outdir, "*ffacands.summary")))
+    nspdplots   = len(glob.glob(os.path.join(outdir, "*spd.png")))
+    nspdratings = len(glob.glob(os.path.join(outdir, "*spd.rat")))
     #ngroupplots = 1
 
-    if (naccels != 2) or (ntgzs !=9) or (nrfifinds < 8) or (nreport != 1) or \
-       (npfdplots == 0) or (nspplots < 6):
+    if (naccels != 2) or (ntgzs !=9) or (nrfifinds < 8) or (nreport != 2) or \
+       (npfdplots == 0) or (nspplots < 6) or (nffasummary != 1):
         return "f"
     elif (npfdplots != nratings) or (ndiagnostic != 1) or (ngroup != 1) or \
-         (ngroupplots == 0):
+         (ngroupplots == 0) or (nspdplots != nspdratings):
         return "w"
     else:
         return "s"

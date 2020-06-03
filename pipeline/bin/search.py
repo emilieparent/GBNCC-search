@@ -2,8 +2,13 @@
 #import analyse_sp
 #import Group_sp_events
 import os, sys, shutil, stat, glob, subprocess, time, socket, struct, tarfile
+import matplotlib
+matplotlib.use('agg')
+import matplotlib.pyplot as plt
 import argparse, numpy, presto, sifting, psr_utils
-import ratings, diagnostics, config
+import ratings
+import types
+import diagnostics, config
 import singlepulse.GBNCC_wrapper_make_spd as GBNCC_wrapper_make_spd
 import ffa_final
 from get_ffa_folding_command import get_ffa_folding_command
@@ -13,8 +18,8 @@ except ImportError:
     from astropy.io import fits as pyfits
 
 checkpointdir = config.jobsdir
-basetmpdir    = config.basetmpdir
 baseoutdir    = config.baseoutdir
+topdir 	      = config.topdir
 
 #-------------------------------------------------------------------
 # Tunable parameters for searching and folding
@@ -50,7 +55,23 @@ sifting.long_period     = 15.0   # longest period candidates to consider (s)
 sifting.harm_pow_cutoff = 8.0    # power required in at least one harmonic
 #-------------------------------------------------------------------
 
+def tar_results(job):
+    import tarfile
+    finaltar = job.outputdir+"/"+job.basefilenm+".tgz"
 
+    resultglobs = ['*rfifind*','*.accelcands*','*.ffacands','*.tgz','*.png', '*.ratings', '*.report','*.diagnostics','groups.txt','*spd.rat','*summary','*summary.txt','*ps.tgz','*rank*','*.header']
+    print "Opening final tarball %s" % (finaltar)
+    tf_all = tarfile.open(finaltar, "w:gz")
+
+    for resultglob in resultglobs:
+	for infile in glob.glob(resultglob):
+		try:
+    			tf_all.add(infile)
+			os.remove(infile)
+		except:
+			print "Could not tarup file:",infile
+
+    tf_all.close()
 
 def get_baryv(ra, dec, mjd, T, obs="GB"):
     """
@@ -65,7 +86,7 @@ def get_baryv(ra, dec, mjd, T, obs="GB"):
     bts = numpy.zeros(nn, dtype=numpy.float64)
     vel = numpy.zeros(nn, dtype=numpy.float64)
     
-    presto.barycenter(tts, bts, vel, nn, ra, dec, obs, "DE200")
+    presto.barycenter(tts, bts, vel, ra, dec, obs, "DE200")
     return vel.mean()
 
 def find_masked_fraction(obs):
@@ -93,6 +114,52 @@ def timed_execute(cmd, run_cmd=1):
     start = time.time()
     if run_cmd:  retcode = subprocess.call(cmd, shell=True)
     end = time.time()
+    return end - start
+
+def timed_execute2(cmd, stdout=None, stderr=sys.stderr):
+    """
+    timed_execute(cmd, stdout=None, stderr=sys.stderr):
+            Execute the command 'cmd' after logging the command
+            to STDOUT.  Return the wall-clock amount of time
+            the command took to execute.
+
+            Output standard output to 'stdout' and standard
+            error to 'stderr'. Both are strings containing filenames.
+            If values are None, the out/err streams are not recorded.
+            By default stdout is None and stderr is combined with stdout.
+    """
+    # Log command to stdout
+    sys.stdout.write("\n'"+cmd+"'\n")
+    sys.stdout.flush()
+
+    stdoutfile = False
+    stderrfile = False
+    if type(stdout) == types.StringType:
+        stdout = open(stdout, 'w')
+        stdoutfile = True
+    if type(stderr) == types.StringType:
+        stderr = open(stderr, 'w')
+        stderrfile = True
+
+    # Run (and time) the command. Check for errors.
+    start = time.time()
+    retcode = subprocess.call(cmd, shell=True, stdout=stdout, stderr=stderr)
+    if retcode < 0:
+        raise PrestoError("Execution of command (%s) terminated by signal (%s)!" % \
+                (cmd, -retcode))
+    elif retcode > 0:
+        raise PrestoError("Execution of command (%s) failed with status (%s)!" % \
+                (cmd, retcode))
+    else:
+        # Exit code is 0, which is "Success". Do nothing.
+        pass
+    end = time.time()
+
+    # Close file objects, if any
+    if stdoutfile:
+        stdout.close()
+    if stderrfile:
+        stderr.close()
     return end - start
 
 def get_folding_command(cand, obs, ddplans, maskfilenm):
@@ -292,6 +359,7 @@ def remove_crosslist_duplicate_candidates(candlist1,candlist2):
     return candlist1,candlist2
 
 def sift_ffa(job,zaplist):
+    print glob.glob(job.basefilenm+'*DM*_cands.ffa')
     ffa_cands = ffa_final.final_sifting_ffa(job.basefilenm,glob.glob(job.basefilenm+"*DM*_cands.ffa"),job.basefilenm+".ffacands",zaplist)
     return ffa_cands
 
@@ -300,7 +368,12 @@ def main(fits_filenm, workdir, jobid, zaplist, ddplans):
     os.chdir(workdir)
     # Set up theano compile dir (UBC_AI rating uses theano)
     theano_compiledir = os.path.join(workdir, "theano_compile")
+    tmpdir = os.path.join(workdir,"tmp") 
     os.mkdir(theano_compiledir)
+    try:
+	os.mkdir(tmpdir)	
+    except:
+	pass
     os.putenv("THEANO_FLAGS", "compiledir=%s"%theano_compiledir)
 
     # Get information on the observation and the job
@@ -318,7 +391,6 @@ def main(fits_filenm, workdir, jobid, zaplist, ddplans):
     # this directory
     if zaplist is None:
         zaplist = glob.glob("*.zaplist")[0]
-    
     # Creat a checkpoint file
     if jobid is not None:
         checkpoint = os.path.join(checkpointdir,
@@ -333,13 +405,11 @@ def main(fits_filenm, workdir, jobid, zaplist, ddplans):
         os.chmod(job.outputdir, stat.S_IRWXU | stat.S_IRWXG | S_IROTH | S_IXOTH)
     except: pass
 
-    # Make sure the tmp directory (in a tmpfs mount) exists
-    if job is not None: tmpdir = os.path.join(basetmpdir, job.basefilenm,
-                                              jobid, "tmp")
-    else: tmpdir = os.path.join(basetmpdir, job.basefilenm, "tmp")
-    try:
-        os.makedirs(tmpdir)
-    except: pass
+    # Get header info for cyberska upload
+    cmd = "python %s/pipeline/bin/getheaderinfo.py %s.fits > %s.header"% \
+          (topdir,job.basefilenm,job.basefilenm)
+    print cmd
+    subprocess.call(cmd, shell=True)
 
     print "\nBeginning GBNCC search of '%s'"%job.fits_filenm
     print "UTC time is:  %s"%(time.asctime(time.gmtime()))
@@ -348,15 +418,12 @@ def main(fits_filenm, workdir, jobid, zaplist, ddplans):
     rfifindmask=job.basefilenm+"_rfifind.mask"
 
     if not os.path.exists(rfifindout) or not os.path.exists(rfifindmask):
-  
-        # rfifind the filterbank file
-        cmd = "rfifind -zapchan 2456:3277 -time %.17g -o %s %s > %s_rfifind.out"%\
-              (rfifind_chunk_time, job.basefilenm,
-               job.fits_filenm, job.basefilenm)
-        job.rfifind_time += timed_execute(cmd)
+        # rfifind the filterbank file   #> %s_rfifind.out"%\
+        cmd = "rfifind -zapchan 2456:3277 -time %.17g -o %s %s " %(rfifind_chunk_time, job.basefilenm,job.fits_filenm)#, job.basefilenm)
+        job.rfifind_time += timed_execute2(cmd,stdout="%s_rfifind.out" % job.basefilenm)
+
     maskfilenm = job.basefilenm + "_rfifind.mask"
-    ### COPYING HERE TO AID IN DEBUGGING ###
-    subprocess.call("cp *rfifind.[bimors]* %s"%job.outputdir, shell=True)
+
     # Find the fraction that was suggested to be masked
     # Note:  Should we stop processing if the fraction is
     #        above some large value?  Maybe 30%?
@@ -378,15 +445,15 @@ def main(fits_filenm, workdir, jobid, zaplist, ddplans):
             f.write("%s\n"%nodenm)
             f.write("%s\n"%queueid)
             f.write("%d %d\n"%(prevddplan,prevpassnum))
-    
+  
     for ddplan in ddplans[prevddplan:]:
-
         # Make a downsampled filterbank file
         if ddplan.downsamp > 1:
-            cmd = "psrfits_subband -dstime %d -nsub %d -o %s_DS%d %s 2>> psrfits_subband.err"%(ddplan.downsamp, job.nchans, job.dsbasefilenm, ddplan.downsamp, job.dsbasefilenm )
+            cmd = "psrfits_subband -dstime %d -nsub %d -o %s_DS%d %s "%(ddplan.downsamp, job.nchans, job.dsbasefilenm, ddplan.downsamp, job.dsbasefilenm )
             job.downsample_time += timed_execute(cmd)
             fits_filenm = job.dsbasefilenm + "_DS%d%s"%\
                           (ddplan.downsamp,job.fits_filenm[job.fits_filenm.rfind("_"):])
+	    
         else:
             fits_filenm = job.fits_filenm
         # Iterate over the individual passes through the .fil file
@@ -399,6 +466,7 @@ def main(fits_filenm, workdir, jobid, zaplist, ddplans):
                    ddplan.dmsperpass, job.N/ddplan.downsamp,
                    tmpdir, job.basefilenm, fits_filenm)
             job.dedispersing_time += timed_execute(cmd)
+
             
             # Do the single-pulse search
             cmd = "single_pulse_search.py -p -m %f -t %f %s/*.dat"%\
@@ -409,6 +477,7 @@ def main(fits_filenm, workdir, jobid, zaplist, ddplans):
                 try:
                     shutil.move(spfile, workdir)
                 except: pass
+
 
             # Iterate over all the new DMs
             for dmstr in ddplan.dmlist[passnum]:
@@ -466,7 +535,7 @@ def main(fits_filenm, workdir, jobid, zaplist, ddplans):
 
                 # Move the .inf files
                 try:
-                    shutil.move(infnm, workdir)
+                    shutil.copy(infnm, workdir)
                 except: pass
                 # Remove the .dat and .fft files
                 try:
@@ -523,6 +592,7 @@ def main(fits_filenm, workdir, jobid, zaplist, ddplans):
     
     # Chen Karako-Argaman's single pulse rating algorithm and Chitrang Patel's single pulse waterfaller code
     mem = int(subprocess.check_output("du -chm *singlepulse | tail -n 1 | cut -d't' -f 1", stderr=subprocess.STDOUT, shell=True))
+    subprocess.call('echo %s >> /home/aemcewen/memory.txt' %mem,shell=True)
     if mem < 600: 
         path = os.path.dirname(os.path.abspath(__file__))
         path = path[:-3] + 'lib/python/singlepulse/'  
@@ -609,30 +679,46 @@ def main(fits_filenm, workdir, jobid, zaplist, ddplans):
     for pfdfile in pfdfiles:
         status = ratings.rate_candidate(pfdfile)
         if status == 1:
-            sys.stdout.write("\nWarining: Ratings failed for %s\n"%pfdfile)
+            sys.stdout.write("\nWarning: Ratings failed for %s\n"%pfdfile)
             sys.stdout.flush()
     # Rate the single pulse candidates
-    cmd = 'rate_spds.py --redirect-warnings --include-all *.spd'
+    path = os.path.dirname(os.path.abspath(__file__))
+    path = path[:-3] + 'lib/python/sp_raters/'  
+    cmd = 'python ' + path + 'rate_spds.py --redirect-warnings --include-all *.spd'
+    print cmd
     subprocess.call(cmd, shell=True)
 
     # Now step through the .ps files and convert them to .png and gzip them
     psfiles = glob.glob("*.ps")
-    for psfile in psfiles:
-        if "singlepulse" in psfile:
-            pngfile = psfile.replace(".ps", ".png")
-            subprocess.call(["convert", psfile, pngfile])
-        elif "grouped" in psfile:
-            pngfile = psfile.replace(".ps", ".png")
-            subprocess.call(["convert", psfile, pngfile])    
-        elif "spd" in psfile:
-            pngfile = psfile.replace(".ps", ".png")
-            subprocess.call(["convert", psfile, pngfile])           
-        else:
-            pngfile = psfile.replace(".ps", ".png")
-            subprocess.call(["convert", "-rotate", "90", psfile, pngfile])
-        os.remove(psfile)
-    
+    try:
+    	for psfile in psfiles:
+		print "Converting ",psfile
+		if 'rfifind' in psfile:
+			pngfile1 = psfile.replace(".ps","-1.png")
+			pngfile2 = psfile.replace(".ps","-2.png")
+			cmd1 = "convert -flatten -rotate 90 %s %s"%(psfile+'[0]',pngfile1)
+			cmd2 = "convert -flatten -rotate 90 %s %s"%(psfile+'[1]',pngfile2) 
+			subprocess.call(cmd1,shell=True)
+			subprocess.call(cmd2,shell=True) 
+		else:
+        		pngfile = psfile.replace(".ps", ".png")
+        		if "singlepulse" in psfile:
+            			extra = ""	
+        		elif "grouped" in psfile:
+            			extra = ""	
+        		elif "spd" in psfile:
+            			extra = ""	
+         
+        		else:
+            			extra = " -rotate 90 "
+        		cmd = "convert -flatten %s %s %s"%(extra,psfile,pngfile)
+        		subprocess.call(cmd,shell=True)
+  
+    except:
+	print "Problem with convert ps files to png, moving on .." 
+	
     # Tar up the results files 
+    print "Taring up files .."
     tar_suffixes = ["_ACCEL_%d.tgz"%lo_accel_zmax,
                     "_ACCEL_%d.tgz"%hi_accel_zmax,
                     "_ACCEL_%d.cand.tgz"%lo_accel_zmax,
@@ -641,7 +727,9 @@ def main(fits_filenm, workdir, jobid, zaplist, ddplans):
                     "_inf.tgz",
                     "_pfd.tgz",
                     "_bestprof.tgz",
-                    "_spd.tgz"]
+                    "_spd.tgz",
+                    "_cands.ffa",
+                    "_ps.tgz"]
     tar_globs = ["*_ACCEL_%d"%lo_accel_zmax,
                  "*_ACCEL_%d"%hi_accel_zmax,
                  "*_ACCEL_%d.cand"%lo_accel_zmax,
@@ -650,7 +738,9 @@ def main(fits_filenm, workdir, jobid, zaplist, ddplans):
                  "*_DM[0-9]*.inf",
                  "*.pfd",
                  "*.bestprof",
-                 "*.spd"]
+                 "*.spd",
+                 "*_cands.ffa",
+                 "*.ps"]
     for (tar_suffix, tar_glob) in zip(tar_suffixes, tar_globs):
         tf = tarfile.open(job.basefilenm+tar_suffix, "w:gz")
         for infile in glob.glob(tar_glob):
@@ -658,19 +748,20 @@ def main(fits_filenm, workdir, jobid, zaplist, ddplans):
             os.remove(infile)
         tf.close()
             
-    # Remove all the downsampled .fil files
-    filfiles = glob.glob("*_DS?.fil") + glob.glob("*_DS??.fil")
+    # Remove all the downsampled .fil or .fits files
+    filfiles = glob.glob("*_DS*.fil") + glob.glob("*_DS*.fits")
     for filfile in filfiles:
         os.remove(filfile)
 
     #Remove all subbanded fits files 
+    print "Removing subbanded files .."  
     subfiles = glob.glob("*subband*.fits")
     for subfile in subfiles:
         os.remove(subfile)
 
     # And finish up
     job.total_time = time.time() - job.total_time
-    print "\nFinished"
+    print "\nFinished. Now writing the reports moving results."
     print "UTC time is:  %s"%(time.asctime(time.gmtime()))
 
     # Write the job report
@@ -679,13 +770,22 @@ def main(fits_filenm, workdir, jobid, zaplist, ddplans):
     
     # Write the diagnostics report
     diagnostics.write_diagnostics(job.basefilenm)
-
+    
     # Move all the important stuff to the output directory
-    subprocess.call("mv *rfifind.[bimors]*  *.accelcands* *.ffacands *.tgz *.png *.ratings *.diagnostics groups.txt *spd.rat *.report *.summary %s"%job.outputdir, shell=True)
+    tar_results(job)
+    #subprocess.call("mv *rfifind.[bimors]*  *.accelcands* *.ffacands *.tgz *.png *.ratings *.diagnostics groups.txt *spd.rat *.report *summary *summary.txt *rank* %s"%job.outputdir, shell=True)
+    subprocess.call("mv *.report *.tgz %s"%job.outputdir, shell=True)
+    os.chmod(job.outputdir,0775)
+
     
     # Make a file indicating that this beam needs to be viewed
     open("%s/tobeviewed"%job.outputdir, "w").close()
-                    
+
+    #Ensure all files are accessible by both aemcewen & rlynch
+    cmd = "setfacl -R -m u:aemcewen:rwx -m u:rlynch:rxw %s"%job.outputdir
+    subprocess.call(cmd,shell=True)
+
+    print "UTC time is:  %s"%(time.asctime(time.gmtime()))                    
     # Remove the checkpointing file
     try:
         os.remove(checkpoint)
@@ -722,6 +822,7 @@ if __name__ == "__main__":
         ddplans['4096fast'].append(dedisp_plan( 771.06,0.30, 92,41,128,32))
         ddplans['4096fast'].append(dedisp_plan(1902.66,0.50,102,22,128,64))
     else:
+        
         # If there is >2GB of RAM per CPU core, the following are preferred
         #
         # For 4096slow chan data: lodm dmstep dms/call #calls #subs downsamp
@@ -752,5 +853,12 @@ if __name__ == "__main__":
     parser.add_argument("fits_filenm",
                         help="A psrfits file from the GBNCC survey")
     args = parser.parse_args()
-    
-    main(args.fits_filenm, args.workdir, args.jobid, args.zaplist, ddplans)
+    start_time = time.time()
+    try:
+    	main(args.fits_filenm, args.workdir, args.jobid, args.zaplist, ddplans)
+	print "Job succeeded (Queue ID:%s)"%str(os.getenv('SLURM_JOBID'))
+    except:
+	print "Job FAILED!! (Queue ID:%s)"%str(os.getenv('SLURM_JOBID'))
+    finally: 
+	final_time = time.time()
+	print "Total processing time: ", round((final_time-start_time)/3600.,3), ' hours'

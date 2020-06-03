@@ -78,6 +78,7 @@ def bary_to_topo(infofilenm, rawdatafile=False, ephem="DE200"):
        else:
           print "Telescope not recognized."
           return 0
+   ## barycenter(tts, bts, vel, nn, ra, dec, tel, ephem)
    barycenter(tts, bts, vel, ra, dec, tel, ephem)
    avgvel = Num.add.reduce(vel) / nn
    tts = Num.arange(nn, dtype='d') * dt
